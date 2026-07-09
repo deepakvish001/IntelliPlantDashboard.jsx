@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Rewrite, explain, translate, or listen to any document at the reading level and language you need." />
+  <title>Accessibility Copilot</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🪄</text></svg>" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">🪄</span>
+        <div>
+          <h1>Accessibility Copilot</h1>
+          <p class="tagline">Any document, in the words you need.</p>
+        </div>
+      </div>
+      <div class="header-tools">
+        <span id="mode-badge" class="badge" hidden></span>
+        <div class="font-controls" role="group" aria-label="Text size">
+          <button type="button" id="font-dec" aria-label="Decrease text size">A−</button>
+          <button type="button" id="font-inc" aria-label="Increase text size">A+</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="layout">
+    <!-- INPUT -->
+    <section class="panel" aria-labelledby="input-heading">
+      <div class="panel-head">
+        <h2 id="input-heading">1 · Paste your content</h2>
+        <div class="samples">
+          <span class="samples-label">Try a sample:</span>
+          <button type="button" class="chip" data-sample="benefits">Benefits letter</button>
+          <button type="button" class="chip" data-sample="school">School notice</button>
+          <button type="button" class="chip" data-sample="medical">Medicine label</button>
+        </div>
+      </div>
+
+      <label class="visually-hidden" for="source-text">Content to transform</label>
+      <textarea id="source-text" rows="12" spellcheck="false"
+        placeholder="Paste a form, letter, announcement, or set of instructions here…"></textarea>
+
+      <div class="input-meta">
+        <span id="char-count" aria-live="polite">0 characters</span>
+        <span id="pii-warning" class="pii-note" aria-live="polite" hidden></span>
+      </div>
+
+      <fieldset class="privacy-box">
+        <legend>Privacy</legend>
+        <label class="switch-row">
+          <input type="checkbox" id="mask-pii" checked />
+          <span>Hide personal details (emails, phone numbers, ID numbers) before sending. They are put back on your device afterwards.</span>
+        </label>
+        <p class="fineprint">Your text is sent only to the AI service to be transformed. This server keeps no copy and writes nothing you paste into its logs.</p>
+      </fieldset>
+    </section>
+
+    <!-- CONTROLS -->
+    <section class="panel" aria-labelledby="controls-heading">
+      <h2 id="controls-heading">2 · Choose how you want it</h2>
+
+      <div class="control-group" role="radiogroup" aria-label="What should the copilot do?">
+        <span class="control-label">What should it do?</span>
+        <div class="segmented" id="mode-group">
+          <label><input type="radio" name="mode" value="rewrite" checked /><span>Rewrite simply</span></label>
+          <label><input type="radio" name="mode" value="explain" /><span>Explain it</span></label>
+          <label><input type="radio" name="mode" value="translate" /><span>Translate</span></label>
+          <label><input type="radio" name="mode" value="summarize" /><span>Summarize</span></label>
+        </div>
+      </div>
+
+      <div class="control-row">
+        <div class="control">
+          <label for="level">Reading level</label>
+          <select id="level">
+            <option value="easy">Very easy (ages 7–9)</option>
+            <option value="simple">Simple (ages 10–13)</option>
+            <option value="plain" selected>Plain language (adult)</option>
+            <option value="original">Keep original level</option>
+          </select>
+        </div>
+
+        <div class="control">
+          <label for="language" id="language-label">Language</label>
+          <select id="language">
+            <option value="English" selected>English</option>
+            <option value="Hindi">हिन्दी — Hindi</option>
+            <option value="Spanish">Español — Spanish</option>
+            <option value="French">Français — French</option>
+            <option value="Arabic">العربية — Arabic</option>
+            <option value="Bengali">বাংলা — Bengali</option>
+            <option value="Portuguese">Português — Portuguese</option>
+            <option value="Chinese (Simplified)">中文 — Chinese</option>
+            <option value="Tamil">தமிழ் — Tamil</option>
+            <option value="Telugu">తెలుగు — Telugu</option>
+            <option value="Marathi">मराठी — Marathi</option>
+            <option value="Urdu">اردو — Urdu</option>
+            <option value="German">Deutsch — German</option>
+            <option value="Japanese">日本語 — Japanese</option>
+            <option value="Swahili">Kiswahili — Swahili</option>
+            <option value="__other__">Other…</option>
+          </select>
+          <input type="text" id="language-other" placeholder="Type a language" hidden aria-label="Other language" />
+        </div>
+
+        <div class="control">
+          <label for="format">Output format</label>
+          <select id="format">
+            <option value="prose">Paragraphs</option>
+            <option value="bullets" selected>Bullet points</option>
+            <option value="steps">Step-by-step</option>
+            <option value="qa">Questions &amp; answers</option>
+          </select>
+        </div>
+      </div>
+
+      <button type="button" id="go" class="primary-btn">
+        <span id="go-label">Transform</span>
+      </button>
+      <p id="status" class="status" role="status" aria-live="polite"></p>
+    </section>
+
+    <!-- OUTPUT -->
+    <section class="panel output-panel" aria-labelledby="output-heading">
+      <div class="panel-head">
+        <h2 id="output-heading">3 · Your result</h2>
+        <div class="output-tools">
+          <button type="button" id="speak" class="tool-btn" disabled aria-pressed="false">🔊 Read aloud</button>
+          <button type="button" id="copy" class="tool-btn" disabled>📋 Copy</button>
+          <button type="button" id="clear" class="tool-btn" disabled>✕ Clear</button>
+        </div>
+      </div>
+      <div id="output" class="output" aria-live="polite" aria-busy="false">
+        <p class="placeholder">The transformed version of your content will appear here.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <p>The copilot never adds facts that are not in your document — anything it cannot read clearly is flagged as <code>[unclear]</code>. For decisions about benefits, health, or legal matters, always confirm the details with the organization that sent the document.</p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
