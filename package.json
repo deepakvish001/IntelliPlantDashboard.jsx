@@ -1,0 +1,21 @@
+{
+  "name": "accessibility-copilot",
+  "version": "1.0.0",
+  "description": "An AI copilot that rewrites, explains, translates, and reads content aloud at the reading level and language each user needs — without inventing details.",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "demo": "MOCK_MODE=1 node server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.110.0",
+    "express": "^4.21.2"
+  },
+  "license": "MIT"
+}
