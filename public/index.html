@@ -3,12 +3,15 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="Rewrite, explain, translate, or listen to any document at the reading level and language you need." />
-  <title>Accessibility Copilot</title>
+  <meta name="description" content="Rewrite, explain, translate, question, or listen to any document at the reading level and language you need." />
+  <meta name="theme-color" content="#0f6b5c" />
+  <title>Accessibility Copilot — any document, in the words you need</title>
   <link rel="stylesheet" href="styles.css" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🪄</text></svg>" />
 </head>
 <body>
+  <a class="skip-link" href="#source-text">Skip to content input</a>
+
   <header class="site-header">
     <div class="header-inner">
       <div class="brand">
@@ -20,6 +23,7 @@
       </div>
       <div class="header-tools">
         <span id="mode-badge" class="badge" hidden></span>
+        <button type="button" id="history-toggle" class="tool-btn" aria-expanded="false" aria-controls="history-drawer">🕘 History</button>
         <div class="font-controls" role="group" aria-label="Text size">
           <button type="button" id="font-dec" aria-label="Decrease text size">A−</button>
           <button type="button" id="font-inc" aria-label="Increase text size">A+</button>
@@ -28,22 +32,45 @@
     </div>
   </header>
 
+  <!-- History drawer -->
+  <aside id="history-drawer" class="history-drawer" hidden aria-label="Your saved transformations">
+    <div class="history-head">
+      <h2>Your history</h2>
+      <div>
+        <button type="button" id="history-clear" class="tool-btn danger">Delete all</button>
+        <button type="button" id="history-close" class="tool-btn" aria-label="Close history">✕</button>
+      </div>
+    </div>
+    <p class="fineprint">Saved only when "Save to my history" is on. Personal details stay masked in storage. History is private to this device.</p>
+    <ul id="history-list" class="history-list"></ul>
+    <p id="history-empty" class="placeholder">Nothing saved yet.</p>
+  </aside>
+
   <main class="layout">
     <!-- INPUT -->
     <section class="panel" aria-labelledby="input-heading">
       <div class="panel-head">
-        <h2 id="input-heading">1 · Paste your content</h2>
+        <h2 id="input-heading"><span class="step">1</span> Paste your content</h2>
         <div class="samples">
-          <span class="samples-label">Try a sample:</span>
+          <span class="samples-label">Try:</span>
           <button type="button" class="chip" data-sample="benefits">Benefits letter</button>
           <button type="button" class="chip" data-sample="school">School notice</button>
           <button type="button" class="chip" data-sample="medical">Medicine label</button>
         </div>
       </div>
 
-      <label class="visually-hidden" for="source-text">Content to transform</label>
-      <textarea id="source-text" rows="12" spellcheck="false"
-        placeholder="Paste a form, letter, announcement, or set of instructions here…"></textarea>
+      <div class="input-wrap" id="drop-zone">
+        <label class="visually-hidden" for="source-text">Content to transform</label>
+        <textarea id="source-text" rows="11" spellcheck="false"
+          placeholder="Paste a form, letter, announcement, or set of instructions here — or drop a .txt file, or use the mic…"></textarea>
+        <div class="input-actions">
+          <button type="button" id="mic-btn" class="tool-btn" aria-pressed="false" title="Dictate with your voice">🎤 Speak</button>
+          <label class="tool-btn file-btn">
+            📄 Upload .txt
+            <input type="file" id="file-input" accept=".txt,.md,text/plain" class="visually-hidden" />
+          </label>
+        </div>
+      </div>
 
       <div class="input-meta">
         <span id="char-count" aria-live="polite">0 characters</span>
@@ -56,13 +83,17 @@
           <input type="checkbox" id="mask-pii" checked />
           <span>Hide personal details (emails, phone numbers, ID numbers) before sending. They are put back on your device afterwards.</span>
         </label>
-        <p class="fineprint">Your text is sent only to the AI service to be transformed. This server keeps no copy and writes nothing you paste into its logs.</p>
+        <label class="switch-row">
+          <input type="checkbox" id="save-history" />
+          <span>Save to my history on this device (stored with personal details masked).</span>
+        </label>
+        <p class="fineprint">Your text is sent only to the AI service to be transformed. The server writes nothing you paste into its logs.</p>
       </fieldset>
     </section>
 
     <!-- CONTROLS -->
     <section class="panel" aria-labelledby="controls-heading">
-      <h2 id="controls-heading">2 · Choose how you want it</h2>
+      <h2 id="controls-heading"><span class="step">2</span> Choose how you want it</h2>
 
       <div class="control-group" role="radiogroup" aria-label="What should the copilot do?">
         <span class="control-label">What should it do?</span>
@@ -128,15 +159,48 @@
     <!-- OUTPUT -->
     <section class="panel output-panel" aria-labelledby="output-heading">
       <div class="panel-head">
-        <h2 id="output-heading">3 · Your result</h2>
+        <h2 id="output-heading"><span class="step">3</span> Your result</h2>
         <div class="output-tools">
+          <button type="button" id="compare" class="tool-btn" disabled aria-pressed="false">⇄ Compare</button>
           <button type="button" id="speak" class="tool-btn" disabled aria-pressed="false">🔊 Read aloud</button>
           <button type="button" id="copy" class="tool-btn" disabled>📋 Copy</button>
+          <button type="button" id="download" class="tool-btn" disabled>⬇ Download</button>
+          <button type="button" id="print" class="tool-btn" disabled>🖨 Print</button>
           <button type="button" id="clear" class="tool-btn" disabled>✕ Clear</button>
         </div>
       </div>
-      <div id="output" class="output" aria-live="polite" aria-busy="false">
-        <p class="placeholder">The transformed version of your content will appear here.</p>
+
+      <div id="metrics" class="metrics" hidden>
+        <span class="metric" id="metric-grade" hidden></span>
+        <span class="metric" id="metric-time" hidden></span>
+        <span class="metric" id="metric-words" hidden></span>
+        <span class="metric" id="metric-privacy" hidden></span>
+      </div>
+
+      <div class="compare-wrap" id="compare-wrap">
+        <div class="compare-col original" id="original-col" hidden>
+          <h3>Original</h3>
+          <div id="original-view" class="output original-view"></div>
+        </div>
+        <div class="compare-col">
+          <h3 id="result-col-title" hidden>Result</h3>
+          <div id="output" class="output" aria-live="polite" aria-busy="false">
+            <p class="placeholder">The transformed version of your content will appear here.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Ask about the document -->
+      <div class="ask-box" id="ask-box" hidden>
+        <h3 id="ask-heading">Ask about this document</h3>
+        <div class="ask-row">
+          <label class="visually-hidden" for="ask-input">Your question</label>
+          <input type="text" id="ask-input" maxlength="1000"
+            placeholder="e.g. What is the deadline? What happens if I miss it?" />
+          <button type="button" id="ask-btn" class="secondary-btn">Ask</button>
+        </div>
+        <div id="ask-output" class="output ask-output" aria-live="polite" hidden></div>
+        <p class="fineprint">Answers come only from your document. If it doesn't say, the copilot will tell you it doesn't say.</p>
       </div>
     </section>
   </main>
@@ -144,6 +208,8 @@
   <footer class="site-footer">
     <p>The copilot never adds facts that are not in your document — anything it cannot read clearly is flagged as <code>[unclear]</code>. For decisions about benefits, health, or legal matters, always confirm the details with the organization that sent the document.</p>
   </footer>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
   <script src="app.js"></script>
 </body>
