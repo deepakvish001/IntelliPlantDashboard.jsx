@@ -2,7 +2,6 @@ import express from "express";
 import crypto from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import Anthropic from "@anthropic-ai/sdk";
 import {
   CORE_SYSTEM_PROMPT, ASK_SYSTEM_PROMPT, buildTaskBlock, buildAskTaskBlock,
   MODES, READING_LEVELS, OUTPUT_FORMATS,
@@ -10,16 +9,25 @@ import {
 import { maskPII, detectPII } from "./lib/privacy.js";
 import { score } from "./lib/readability.js";
 import { openDb } from "./lib/db.js";
+import { resolveProvider, createProvider } from "./lib/ai.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
 const MOCK_MODE = process.env.MOCK_MODE === "1";
-const MODEL = process.env.CLAUDE_MODEL || "claude-opus-4-8";
 const DB_FILE = process.env.DB_FILE || path.join(__dirname, "data", "copilot.db");
 const MAX_INPUT_CHARS = 60_000;
 
 const db = openDb(DB_FILE);
-const client = MOCK_MODE ? null : new Anthropic();
+
+// Pick the AI backend (Claude or Gemini) from whichever key is configured.
+const providerCfg = resolveProvider();
+const provider = !MOCK_MODE && providerCfg.ok ? createProvider(providerCfg) : null;
+if (!MOCK_MODE && !provider) {
+  console.warn(
+    "⚠  No AI provider configured. Set GEMINI_API_KEY (Google AI Studio) or " +
+    "ANTHROPIC_API_KEY, or run with MOCK_MODE=1. The UI still loads; transforms will return a setup message."
+  );
+}
 
 const app = express();
 app.disable("x-powered-by");
@@ -96,8 +104,13 @@ setInterval(() => {
 app.get("/api/health", (_req, res) => {
   res.json({
     ok: true,
-    mode: MOCK_MODE ? "demo" : "live",
-    model: MODEL,
+    mode: MOCK_MODE ? "demo" : provider ? "live" : "unconfigured",
+    provider: MOCK_MODE ? "demo" : providerCfg.name,
+    providerLabel: MOCK_MODE
+      ? "Demo mode — responses are canned examples"
+      : provider
+        ? `Powered by ${provider.label}`
+        : "No API key configured — set GEMINI_API_KEY or ANTHROPIC_API_KEY",
     options: {
       modes: Object.fromEntries(Object.entries(MODES).map(([k, v]) => [k, v.name])),
       levels: Object.fromEntries(Object.entries(READING_LEVELS).map(([k, v]) => [k, v.name])),
@@ -144,48 +157,40 @@ function openSSE(res) {
   return (event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 }
 
-function friendlyApiError(err) {
-  if (err instanceof Anthropic.AuthenticationError) {
-    return "The server is not authenticated with the Claude API. Set ANTHROPIC_API_KEY and restart, or start with MOCK_MODE=1 to demo without a key.";
+// Provider-agnostic streaming: drives whichever backend is configured and
+// normalizes stop reasons so Claude and Gemini behave identically.
+async function runStream({ send, systemBlocks, userContent, onDone }) {
+  if (!provider) {
+    send("error", {
+      message: "This server has no AI provider configured. Set GEMINI_API_KEY (from Google AI Studio) or ANTHROPIC_API_KEY and restart — or run with MOCK_MODE=1 to demo without a key.",
+    });
+    return;
   }
-  if (err instanceof Anthropic.RateLimitError) {
-    return "The AI service is receiving too many requests right now. Wait a moment and try again.";
-  }
-  if (err instanceof Anthropic.APIConnectionError) {
-    return "Could not reach the Claude API. Check the server's network connection and try again.";
-  }
-  if (err instanceof Anthropic.APIError) {
-    return `The Claude API returned an error (${err.status ?? "unknown"}). Try again shortly.`;
-  }
-  console.error("Unexpected error:", err);
-  return "Something went wrong on the server. Try again.";
-}
-
-async function streamClaude({ send, system, userContent, onDone }) {
   try {
-    const stream = client.messages.stream({
-      model: MODEL,
-      max_tokens: 16000,
-      thinking: { type: "adaptive" },
-      system,
-      messages: [{ role: "user", content: userContent }],
-    });
     let full = "";
-    stream.on("text", (delta) => {
-      full += delta;
-      send("delta", { text: delta });
+    const { stopReason } = await provider.stream({
+      systemBlocks,
+      userContent,
+      onText: (delta) => {
+        full += delta;
+        send("delta", { text: delta });
+      },
     });
-    const final = await stream.finalMessage();
-    if (final.stop_reason === "refusal") {
+
+    if (stopReason === "refusal") {
       send("error", { message: "The model declined to process this content for safety reasons. Nothing was changed or stored." });
-    } else if (final.stop_reason === "max_tokens") {
-      send("error", { message: "The output was cut off at the length limit. Try a smaller part of the document." });
-    } else {
-      await onDone?.(full);
-      send("done", { stopReason: final.stop_reason });
+      return;
     }
+    // On max_tokens, keep whatever streamed if it's substantial (the user still
+    // gets a usable, if slightly clipped, result); only error if nothing came back.
+    if (stopReason === "max_tokens" && full.trim().length < 20) {
+      send("error", { message: "The output was cut off at the length limit. Try a smaller part of the document." });
+      return;
+    }
+    await onDone?.(full);
+    send("done", { stopReason, truncated: stopReason === "max_tokens" });
   } catch (err) {
-    send("error", { message: friendlyApiError(err) });
+    send("error", { message: provider.friendlyError(err) });
   }
 }
 
@@ -246,11 +251,11 @@ app.post("/api/transform", rateLimit(20, 60_000), async (req, res) => {
     return;
   }
 
-  await streamClaude({
+  await runStream({
     send,
-    system: [
-      { type: "text", text: CORE_SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
-      { type: "text", text: taskBlock },
+    systemBlocks: [
+      { text: CORE_SYSTEM_PROMPT, cache: true },
+      { text: taskBlock },
     ],
     userContent: `<content_to_transform>\n${masked}\n</content_to_transform>`,
     onDone: finish,
@@ -283,11 +288,11 @@ app.post("/api/ask", rateLimit(20, 60_000), async (req, res) => {
     return;
   }
 
-  await streamClaude({
+  await runStream({
     send,
-    system: [
-      { type: "text", text: ASK_SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
-      { type: "text", text: buildAskTaskBlock(language) },
+    systemBlocks: [
+      { text: ASK_SYSTEM_PROMPT, cache: true },
+      { text: buildAskTaskBlock(language) },
     ],
     userContent: `<document>\n${masked}\n</document>\n\n<reader_question>\n${question.trim()}\n</reader_question>`,
   });
@@ -319,7 +324,7 @@ function streamMockTransform(send, { mode, language }) {
     `- Send them to the address on the letter, or email [EMAIL-1].\n`,
     `- The part of the letter about "form 11-B" is flagged as [unclear: the source cut off mid-sentence].\n\n`,
     `> **Please note:** this is a demo response and is not based on your pasted text. `,
-    `Start the server with a Claude API key for real transformations.\n`,
+    `Start the server with a Gemini or Claude API key for real transformations.\n`,
   ]);
 }
 
@@ -334,8 +339,10 @@ function streamMockAsk(send, question) {
 }
 
 app.listen(PORT, () => {
-  console.log(
-    `Accessibility Copilot running at http://localhost:${PORT} ` +
-    `(${MOCK_MODE ? "DEMO mode — no API calls" : `live, model ${MODEL}`}; history db: ${DB_FILE})`
-  );
+  const backend = MOCK_MODE
+    ? "DEMO mode — no API calls"
+    : provider
+      ? `live — ${provider.label}`
+      : "no API key configured (set GEMINI_API_KEY or ANTHROPIC_API_KEY)";
+  console.log(`Accessibility Copilot running at http://localhost:${PORT} (${backend}; history db: ${DB_FILE})`);
 });

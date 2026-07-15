@@ -64,9 +64,11 @@ let toastTimer = null;
 fetch("/api/health")
   .then((r) => r.json())
   .then((h) => {
-    if (h.mode === "demo") {
-      modeBadge.textContent = "Demo mode — responses are canned examples";
+    // Always surface which backend is running (demo / Gemini / Claude / unconfigured).
+    if (h.providerLabel) {
+      modeBadge.textContent = h.providerLabel;
       modeBadge.hidden = false;
+      modeBadge.classList.toggle("badge-ok", h.mode === "live");
     }
   })
   .catch(() => {});
@@ -269,7 +271,7 @@ async function transform() {
         showMetrics(data);
         if (data.historyId) loadHistory();
       },
-      done() {
+      done(data) {
         rawMarkdown = restorePlaceholders(rawMarkdown);
         renderOutput(false);
         const restored = Object.keys(replacements).length;
@@ -278,6 +280,7 @@ async function transform() {
           : "Done.");
         setToolButtons(true);
         askBox.hidden = false;
+        if (data && data.truncated) toast("Output reached the length limit — it may be slightly cut off.");
       },
       error(data) {
         renderOutput(false);
