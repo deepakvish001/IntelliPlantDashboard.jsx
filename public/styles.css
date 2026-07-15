@@ -105,6 +105,10 @@ button, input, select, textarea {
   font-size: 0.8rem;
   font-weight: 600;
 }
+.badge.badge-ok {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
 .font-controls { display: flex; gap: 0.25rem; }
 .font-controls button {
   border: 1px solid var(--line);

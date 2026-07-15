@@ -36,34 +36,49 @@ Forms, notices, announcements, and instructions are often written in ways that a
 - Input length limits, typed Claude API error handling, `refusal` / `max_tokens` stop reasons surfaced as clear messages
 - SQLite (Node's built-in `node:sqlite`, WAL mode) — zero native dependencies
 - Dockerfile (non-root, volume-mounted data dir)
-- 20 unit tests: PII masking, prompt building, readability scoring, history store isolation
+- 29 unit tests: provider selection, PII masking, prompt building, readability scoring, history store isolation
+
+## AI providers — Gemini **or** Claude
+
+The app works with either **Google Gemini** (Google AI Studio key) or **Anthropic Claude**. It auto-selects based on which key you set — no code change needed. A single provider layer (`lib/ai.js`) streams identical Server-Sent Events to the browser whichever backend runs, so the whole UI is provider-agnostic.
+
+| Env var | Provider | Default model |
+|---|---|---|
+| `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) | Google Gemini | `gemini-2.5-flash` |
+| `ANTHROPIC_API_KEY` | Anthropic Claude | `claude-opus-4-8` |
+
+Selection order: `AI_PROVIDER` (explicit `gemini`/`claude`) → a Gemini key → a Claude key. If both keys are set, Gemini wins unless `AI_PROVIDER=claude`. Override models with `GEMINI_MODEL` / `CLAUDE_MODEL`. The header badge shows which backend is live.
 
 ## Architecture
 
 ```
-Browser (public/)                     Server (Node + Express)                Claude API
-┌──────────────────────┐   POST      ┌─────────────────────────┐  stream   ┌──────────────┐
-│ controls + textarea  ├──/api/─────▶│ rate-limit → validate → │──────────▶│ claude-opus- │
-│ SSE consumer         │◀─transform──│ mask PII → build prompt │◀──────────│ 4-8          │
-│ markdown renderer    │  /api/ask   │ → stream deltas as SSE  │           └──────────────┘
+Browser (public/)                     Server (Node + Express)             AI provider (lib/ai.js)
+┌──────────────────────┐   POST      ┌─────────────────────────┐  stream  ┌────────────────────┐
+│ controls + textarea  ├──/api/─────▶│ rate-limit → validate → │─────────▶│ Gemini  (AI Studio)│
+│ SSE consumer         │◀─transform──│ mask PII → build prompt │◀─────────│   or Claude        │
+│ markdown renderer    │  /api/ask   │ → stream deltas as SSE  │          └────────────────────┘
 │ TTS + dictation      │  (SSE)      │ → readability metrics   │
 │ compare + metrics    │             │ (no content logging)    │──▶ SQLite (opt-in history,
 └──────────────────────┘             └─────────────────────────┘            masked at rest)
 ```
 
-- **Model:** `claude-opus-4-8` with adaptive thinking, streamed end-to-end (Claude → server → browser as SSE).
-- **Prompt caching:** the large fixed system prompts carry `cache_control` breakpoints; only small per-request task blocks vary.
+- **Streamed end-to-end** (provider → server → browser as SSE). Stop reasons (refusal, length-limit, normal) are normalized across providers so the UI behaves the same either way.
+- On Claude, the fixed system prompts carry `cache_control` breakpoints; on Gemini they become one system instruction with thinking disabled on Flash for low latency.
 
 ## Run it
 
 ```bash
 npm install
 
-# With a real API key:
+# With Gemini (get a key at https://aistudio.google.com/apikey):
+export GEMINI_API_KEY=AIza...
+npm start
+
+# …or with Claude:
 export ANTHROPIC_API_KEY=sk-ant-...
 npm start
 
-# Or demo the full UI without a key (canned responses):
+# …or demo the full UI without any key (canned responses):
 npm run demo
 ```
 
@@ -73,18 +88,20 @@ Open http://localhost:3000. Tests: `npm test`.
 
 ```bash
 docker build -t accessibility-copilot .
-docker run -p 3000:3000 -e ANTHROPIC_API_KEY=sk-ant-... -v copilot-data:/app/data accessibility-copilot
+docker run -p 3000:3000 -e GEMINI_API_KEY=AIza... -v copilot-data:/app/data accessibility-copilot
+# (or -e ANTHROPIC_API_KEY=sk-ant-...)
 ```
 
 ## Project layout
 
 ```
 server.js            Express app: transform/ask (SSE), scan, history CRUD, health
+lib/ai.js            Provider abstraction — Gemini or Claude, unified streaming
 lib/prompt.js        System prompts (transform + grounded Q&A) and task builders
 lib/privacy.js       PII detection & reversible masking (email/phone/ID/card)
 lib/readability.js   Flesch-Kincaid grade, word counts, reading time
 lib/db.js            SQLite history store (per-device isolation, capped, masked)
 public/              Self-contained UI (no CDNs): index.html, app.js, styles.css
-test/                20 unit tests
+test/                29 unit tests
 Dockerfile           Production container (non-root, persistent volume)
 ```
