@@ -11,7 +11,18 @@ import { score } from "./lib/readability.js";
 import { openDb } from "./lib/db.js";
 import { resolveProvider, createProvider } from "./lib/ai.js";
 
+// Load a .env file from the project root if present, so users can put their
+// API key in a file (GEMINI_API_KEY=... / ANTHROPIC_API_KEY=...) instead of
+// exporting a shell variable — works the same on Windows, macOS, and Linux.
+// process.loadEnvFile (Node 20.12+) throws when the file is missing; that's fine.
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+try {
+  if (typeof process.loadEnvFile === "function") {
+    process.loadEnvFile(path.join(__dirname, ".env"));
+  }
+} catch {
+  // No .env file — rely on real environment variables (or MOCK_MODE).
+}
 const PORT = process.env.PORT || 3000;
 const MOCK_MODE = process.env.MOCK_MODE === "1";
 const DB_FILE = process.env.DB_FILE || path.join(__dirname, "data", "copilot.db");
