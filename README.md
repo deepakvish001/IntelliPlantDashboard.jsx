@@ -67,22 +67,34 @@ Browser (public/)                     Server (Node + Express)             AI pro
 
 ## Run it
 
+The easiest way — put your key in a `.env` file (loaded automatically on start, works on **Windows, macOS, and Linux** alike):
+
 ```bash
 npm install
 
-# With Gemini (get a key at https://aistudio.google.com/apikey):
-export GEMINI_API_KEY=AIza...
-npm start
+# 1. Create your .env from the template
+cp .env.example .env            # Windows PowerShell: Copy-Item .env.example .env
 
-# …or with Claude:
-export ANTHROPIC_API_KEY=sk-ant-...
-npm start
+# 2. Open .env and set ONE key:
+#      GEMINI_API_KEY=AIza...        (from https://aistudio.google.com/apikey)
+#    …or ANTHROPIC_API_KEY=sk-ant-...
 
-# …or demo the full UI without any key (canned responses):
-npm run demo
+# 3. Start
+npm start
 ```
 
-Open http://localhost:3000. Tests: `npm test`.
+Open http://localhost:3000 — the header badge shows the active backend ("Powered by Gemini …").
+
+Prefer environment variables instead of a file? They work too:
+
+```bash
+# macOS / Linux
+export GEMINI_API_KEY=AIza... && npm start
+# Windows PowerShell
+$env:GEMINI_API_KEY="AIza..."; npm start
+```
+
+No key? Demo the full UI with canned responses: `npm run demo`. Tests: `npm test`.
 
 ### Docker
 
